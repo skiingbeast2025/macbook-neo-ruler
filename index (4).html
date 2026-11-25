@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MacBook Neo On-Screen Ruler</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --card: #f6f8fa;
+      --border: #d0d7de;
+      --fg: #1f2328;
+      --muted: #656d76;
+      --primary: #0969da;
+      --primary-soft: rgba(9, 105, 218, 0.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --card: #161b22;
+        --border: #30363d;
+        --fg: #e6edf3;
+        --muted: #8b949e;
+        --primary: #58a6ff;
+        --primary-soft: rgba(88, 166, 255, 0.14);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      user-select: none;
+    }
+    body.embed {
+      padding: 8px;
+      background: transparent;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .badge {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .control-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    input[type="range"] {
+      accent-color: var(--primary);
+      width: 160px;
+    }
+    button {
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--fg);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover { opacity: 0.85; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg);
+    }
+    .ruler-wrap {
+      width: 100%;
+      overflow: hidden;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    svg { display: block; width: 100%; height: 156px; }
+    .footer {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--card);
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .embed-only-hide { display: block; }
+    body.embed .embed-only-hide { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header embed-only-hide">
+      <h1>MacBook Neo On-Screen Ruler</h1>
+      <span id="spec-badge" class="badge"></span>
+    </div>
+
+    <div class="controls">
+      <div class="control-group">
+        <label>
+          Scale:
+          <input id="scale-slider" type="range" min="0.5" max="1.5" step="0.002" value="1" />
+          <span id="scale-readout" class="mono">100.0%</span>
+        </label>
+        <label>
+          <input id="card-toggle" type="checkbox" />
+          Credit card check (85.6 mm)
+        </label>
+      </div>
+      <div class="control-group">
+        <span id="marker-readout" class="mono">Marker: 0.0 mm (0.00 in)</span>
+        <button id="reset-btn" type="button">Reset</button>
+        <button id="copy-iframe-btn" class="embed-only-hide" type="button">Copy iframe</button>
+      </div>
+    </div>
+
+    <div id="ruler-wrap" class="ruler-wrap">
+      <svg id="ruler-svg"></svg>
+    </div>
+
+    <div class="footer embed-only-hide">
+      <span>Keep browser zoom at 100% (<code>Cmd + 0</code>) for exact physical scale on a 13.0" MacBook Neo (2408&times;1506, 219 PPI).</span>
+      <span>Click or drag on the ruler to place the measurement line. Append <code>?embed=1</code> for compact iframe mode.</span>
+    </div>
+  </div>
+
+  <script>
+    // MacBook Neo 13.0" physical display width:
+    // 2408 px / 219 PPI = 10.9954338 in (279.284 mm)
+    const NEO_WIDTH_MM = (2408 / 219) * 25.4;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('embed') === '1' || window.self !== window.top) {
+      document.body.classList.add('embed');
+    }
+
+    const svg = document.getElementById('ruler-svg');
+    const wrap = document.getElementById('ruler-wrap');
+    const specBadge = document.getElementById('spec-badge');
+    const scaleSlider = document.getElementById('scale-slider');
+    const scaleReadout = document.getElementById('scale-readout');
+    const markerReadout = document.getElementById('marker-readout');
+    const cardToggle = document.getElementById('card-toggle');
+    const resetBtn = document.getElementById('reset-btn');
+    const copyIframeBtn = document.getElementById('copy-iframe-btn');
+
+    let userScale = 1.0;
+    let markerX = 0;
+    let dragging = false;
+
+    function getPxPerMm() {
+      const logicalW = (window.screen && window.screen.width) ? window.screen.width : 1408;
+      return (logicalW / NEO_WIDTH_MM) * userScale;
+    }
+
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    function draw() {
+      const width = wrap.clientWidth || 640;
+      const height = 156;
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      const pxPerMm = getPxPerMm();
+      const pxPerIn = pxPerMm * 25.4;
+      const logicalW = (window.screen && window.screen.width) ? window.screen.width : 1408;
+
+      if (specBadge) {
+        specBadge.textContent = `Screen: ${logicalW}px logical (${pxPerIn.toFixed(1)} CSS px/in)`;
+      }
+      scaleReadout.textContent = `${(userScale * 100).toFixed(1)}%`;
+
+      const fg = cssVar('--fg');
+      const muted = cssVar('--muted');
+      const primary = cssVar('--primary');
+      const primarySoft = cssVar('--primary-soft');
+      const border = cssVar('--border');
+
+      let html = `<line x1="0" y1="78" x2="${width}" y2="78" stroke="${border}" stroke-width="1" />`;
+
+      // Top edge: mm / cm
+      const totalMm = Math.floor(width / pxPerMm);
+      for (let mm = 0; mm <= totalMm; mm++) {
+        const x = mm * pxPerMm;
+        const isCm = mm % 10 === 0;
+        const isHalf = mm % 5 === 0;
+        const tickH = isCm ? 28 : isHalf ? 18 : 10;
+        html += `<line x1="${x.toFixed(2)}" y1="0" x2="${x.toFixed(2)}" y2="${tickH}" stroke="${fg}" stroke-width="${isCm ? 1.4 : 0.9}" opacity="${isCm ? 1 : 0.72}" />`;
+        if (isCm) {
+          const cm = mm / 10;
+          const lx = mm === 0 ? 4 : x + 3;
+          html += `<text x="${lx.toFixed(2)}" y="43" fill="${fg}" font-size="12" font-family="ui-monospace, monospace">${cm}${cm === 0 ? ' cm' : ''}</text>`;
+        }
+      }
+
+      // Bottom edge: 1/16 inch
+      const total16ths = Math.floor((width / pxPerIn) * 16);
+      for (let s = 0; s <= total16ths; s++) {
+        const x = (s / 16) * pxPerIn;
+        const isIn = s % 16 === 0;
+        const isHalf = s % 8 === 0;
+        const isQ = s % 4 === 0;
+        const is8 = s % 2 === 0;
+        const tickH = isIn ? 28 : isHalf ? 21 : isQ ? 15 : is8 ? 11 : 7;
+        html += `<line x1="${x.toFixed(2)}" y1="${height}" x2="${x.toFixed(2)}" y2="${height - tickH}" stroke="${fg}" stroke-width="${isIn ? 1.4 : 0.9}" opacity="${isIn ? 1 : 0.72}" />`;
+        if (isIn) {
+          const inch = s / 16;
+          const lx = s === 0 ? 4 : x + 3;
+          html += `<text x="${lx.toFixed(2)}" y="${height - 34}" fill="${fg}" font-size="12" font-family="ui-monospace, monospace">${inch}${inch === 0 ? ' in' : ''}</text>`;
+        }
+      }
+
+      if (cardToggle.checked) {
+        const cardW = 85.6 * pxPerMm;
+        html += `<rect x="0" y="50" width="${cardW.toFixed(2)}" height="56" fill="${primarySoft}" stroke="${primary}" stroke-width="1.5" stroke-dasharray="4 3" />`;
+        html += `<text x="8" y="72" fill="${primary}" font-size="12" font-weight="600">Standard Card: 85.6 mm (3.37 in)</text>`;
+        html += `<text x="8" y="90" fill="${muted}" font-size="11">Align card to left edge to verify scale</text>`;
+      }
+
+      if (markerX > 0) {
+        const mmVal = markerX / pxPerMm;
+        const inVal = markerX / pxPerIn;
+        markerReadout.textContent = `Marker: ${mmVal.toFixed(1)} mm (${inVal.toFixed(2)} in)`;
+        html += `<line x1="${markerX.toFixed(2)}" y1="0" x2="${markerX.toFixed(2)}" y2="${height}" stroke="${primary}" stroke-width="1.75" />`;
+        html += `<circle cx="${markerX.toFixed(2)}" cy="78" r="4.5" fill="${primary}" />`;
+      } else {
+        markerReadout.textContent = 'Marker: 0.0 mm (0.00 in)';
+      }
+
+      svg.innerHTML = html;
+    }
+
+    function updateMarker(e) {
+      const rect = wrap.getBoundingClientRect();
+      markerX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+      draw();
+    }
+
+    wrap.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      wrap.setPointerCapture(e.pointerId);
+      updateMarker(e);
+    });
+    wrap.addEventListener('pointermove', (e) => { if (dragging) updateMarker(e); });
+    wrap.addEventListener('pointerup', () => { dragging = false; });
+
+    scaleSlider.addEventListener('input', () => {
+      userScale = parseFloat(scaleSlider.value);
+      draw();
+    });
+    cardToggle.addEventListener('change', draw);
+    resetBtn.addEventListener('click', () => {
+      userScale = 1.0;
+      scaleSlider.value = '1';
+      markerX = 0;
+      draw();
+    });
+    if (copyIframeBtn) {
+      copyIframeBtn.addEventListener('click', async () => {
+        const base = window.location.href.split('?')[0];
+        const code = `<iframe src="${base}?embed=1" width="100%" height="225" style="border:0;" title="MacBook Neo Ruler"></iframe>`;
+        try {
+          await navigator.clipboard.writeText(code);
+          copyIframeBtn.textContent = 'Copied!';
+          setTimeout(() => { copyIframeBtn.textContent = 'Copy iframe'; }, 1500);
+        } catch {
+          prompt('Copy this iframe snippet:', code);
+        }
+      });
+    }
+
+    window.addEventListener('resize', draw);
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+    draw();
+  </script>
+</body>
+</html>
